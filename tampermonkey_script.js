@@ -1,107 +1,162 @@
+
 // ==UserScript==
-// @name         WarEra Crate Opener
-// @namespace    local.warera.crate-opener
-// @version      1.0.0
-// @description  Clicks WarEra's visible OPEN button at a controlled pace.
+// @name         WarEra Auto Clicker
+// @namespace    https://app.warera.io/
+// @version      1.1.3
+// @description  Automatically clicks selected WarEra actions
+// @author       TyuTheSavage
 // @match        https://app.warera.io/*
 // @grant        none
-// @run-at       document-idle
 // ==/UserScript==
 
 (() => {
   'use strict';
 
-  if (document.getElementById('warera-crate-opener')) return;
-
+  const PANEL_ID = 'warera-crate-opener';
   const MIN_DELAY = 800;
   const DEFAULT_DELAY = 1500;
-  const DEFAULT_LIMIT = 1;
 
-  const panel = document.createElement('section');
-  panel.id = 'warera-crate-opener';
-  panel.innerHTML = `
-    <div class="wco-title">WarEra crate opener</div>
-    <label class="wco-row">Delay <input class="wco-delay" type="number" min="${MIN_DELAY}" step="100" value="${DEFAULT_DELAY}"> ms</label>
-    <label class="wco-row">Crates <input class="wco-limit" type="number" min="1" step="1" value="${DEFAULT_LIMIT}"></label>
-    <div class="wco-buttons"><button class="wco-start" type="button">Start</button><button class="wco-stop" type="button" disabled>Stop</button></div>
-    <div class="wco-status" role="status">Stopped · limit 1</div>
-    <div class="wco-help">Set a higher limit to open more. Stop anytime.</div>
-  `;
-  const style = document.createElement('style');
-  style.textContent = `
-    #warera-crate-opener{position:fixed;z-index:2147483647;right:16px;bottom:16px;width:230px;padding:12px;background:#17212b;color:#f4f6f8;border:1px solid #65717e;border-radius:9px;box-shadow:0 4px 18px #0008;font:13px/1.4 system-ui,sans-serif}
-    #warera-crate-opener *{box-sizing:border-box}
-    #warera-crate-opener .wco-title{font-weight:700;margin-bottom:8px}
-    #warera-crate-opener .wco-row{display:flex;align-items:center;justify-content:space-between;margin:6px 0}
-    #warera-crate-opener input{width:92px;padding:4px;border:1px solid #718091;border-radius:4px;background:#fff;color:#111}
-    #warera-crate-opener .wco-buttons{display:flex;gap:8px;margin-top:9px}
-    #warera-crate-opener button{flex:1;padding:6px;border:0;border-radius:5px;font-weight:700;cursor:pointer}
-    #warera-crate-opener .wco-start{background:#81c784;color:#102015}
-    #warera-crate-opener .wco-stop{background:#ef9a9a;color:#2c1111}
-    #warera-crate-opener button:disabled{opacity:.45;cursor:default}
-    #warera-crate-opener .wco-status{margin-top:8px;min-height:18px}
-    #warera-crate-opener .wco-help{margin-top:5px;color:#c0cad4;font-size:11px}
-  `;
-  document.documentElement.append(style, panel);
-
-  const delayInput = panel.querySelector('.wco-delay');
-  const limitInput = panel.querySelector('.wco-limit');
-  const startButton = panel.querySelector('.wco-start');
-  const stopButton = panel.querySelector('.wco-stop');
-  const status = panel.querySelector('.wco-status');
-  let timer = null;
-  let opened = 0;
   let running = false;
+  let timer = null;
+  let clicks = 0;
+  let minimized = false;
 
-  function findOpenButton() {
-    const candidates = document.querySelectorAll('button, [role="button"]');
-    for (const element of candidates) {
-      if (panel.contains(element)) continue;
-      const rect = element.getBoundingClientRect();
-      const css = getComputedStyle(element);
-      if (!rect.width || !rect.height || css.visibility === 'hidden' || css.display === 'none') continue;
-      if (element.disabled || element.getAttribute('aria-disabled') === 'true') continue;
-      const label = (element.getAttribute('aria-label') || element.innerText || element.textContent || '')
+  const panel = document.createElement('div');
+  panel.id = PANEL_ID;
+  panel.style.cssText = `
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  z-index:999999;
+  background:#181825;
+  color:#cdd6f4;
+  padding:12px;
+  border:1px solid #45475a;
+  border-radius:10px;
+  font:13px Ubuntu,Arial,sans-serif;
+  width:190px;
+  box-sizing:border-box;
+  box-shadow:0 4px 15px #0008;
+  `;
+
+  panel.innerHTML = `
+  <div id="we-header" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+  <span style="font-weight:bold">WarEra Auto Clicker</span>
+  <button id="we-minimize" style="padding:2px 8px;background:#45475a;color:#cdd6f4;border:0;border-radius:4px;cursor:pointer">−</button>
+  </div>
+
+  <div id="we-controls">
+  <label>Action</label>
+  <select id="we-action" style="width:100%;margin:5px 0 10px;padding:5px;background:#313244;color:#cdd6f4;border:1px solid #585b70;border-radius:5px">
+  <option>OPEN</option>
+  <option>DEFEND</option>
+  <option>ATTACK</option>
+  <option>RESIST</option>
+  </select>
+
+  <label>Delay (ms)</label>
+  <input id="we-delay" type="number" min="${MIN_DELAY}" value="${DEFAULT_DELAY}" style="width:100%;box-sizing:border-box;margin:5px 0 10px;padding:5px;background:#313244;color:#cdd6f4;border:1px solid #585b70;border-radius:5px">
+
+  <label>Click limit (0 = unlimited)</label>
+  <input id="we-limit" type="number" min="0" value="1" style="width:100%;box-sizing:border-box;margin:5px 0 10px;padding:5px;background:#313244;color:#cdd6f4;border:1px solid #585b70;border-radius:5px">
+
+  <div style="display:flex;gap:6px">
+  <button id="we-start" style="flex:1;padding:6px;background:#a6e3a1;color:#1e1e2e;border:0;border-radius:5px;cursor:pointer">Start</button>
+  <button id="we-stop" style="flex:1;padding:6px;background:#f38ba8;color:#1e1e2e;border:0;border-radius:5px;cursor:pointer">Stop</button>
+  </div>
+  </div>
+
+  <div id="we-status" style="margin-top:8px;color:#a6adc8;font-size:12px">Idle</div>
+  `;
+
+  document.body.appendChild(panel);
+
+  const $ = id => panel.querySelector(`#${id}`);
+
+  function findButton(action) {
+    const pattern = action === 'OPEN'
+    ? /^OPEN\d*$/
+    : new RegExp(`^${action}\\d*$`);
+
+    return [...document.querySelectorAll('button, [role="button"], div')]
+    .find(el => {
+      if (!el.getClientRects().length) return false;
+      if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+
+      const label = (el.getAttribute('aria-label') || el.textContent || '')
+      .replace(/\s+/g, '')
+      .toUpperCase();
+
+      if (!pattern.test(label)) return false;
+
+      return ![...el.querySelectorAll('button, [role="button"], div')].some(child => {
+        const childLabel = (child.getAttribute('aria-label') || child.textContent || '')
         .replace(/\s+/g, '')
         .toUpperCase();
-      if (/^OPEN\d*$/.test(label)) return element;
-    }
-    return null;
+
+        return pattern.test(childLabel);
+      });
+    });
   }
 
   function stop(message = 'Stopped') {
     running = false;
-    if (timer !== null) clearTimeout(timer);
+    clearTimeout(timer);
     timer = null;
-    startButton.disabled = false;
-    stopButton.disabled = true;
-    status.textContent = `${message} · opened ${opened}`;
+    $('we-action').disabled = false;
+    $('we-status').textContent = `${message} | Clicks: ${clicks}`;
   }
 
-  function step() {
+  function run() {
     if (!running) return;
-    const limit = Math.max(1, Number.parseInt(limitInput.value, 10) || DEFAULT_LIMIT);
-    if (opened >= limit) return stop('Limit reached');
-    const button = findOpenButton();
-    if (!button) return stop('OPEN button not found');
+
+    const action = $('we-action').value;
+    const limit = Math.max(0, Number($('we-limit').value) || 0);
+    const delay = Math.max(MIN_DELAY, Number($('we-delay').value) || DEFAULT_DELAY);
+
+    if (limit > 0 && clicks >= limit) {
+      stop('Limit reached');
+      return;
+    }
+
+    const button = findButton(action);
+
+    if (!button) {
+      stop(`${action} not found`);
+      return;
+    }
+
     button.click();
-    opened += 1;
-    status.textContent = `Running · ${opened}/${limit}`;
-    const delay = Math.max(MIN_DELAY, Number.parseInt(delayInput.value, 10) || DEFAULT_DELAY);
-    timer = setTimeout(step, delay);
+    clicks++;
+
+    $('we-status').textContent = `Running | ${action} | Clicks: ${clicks}`;
+
+    timer = setTimeout(run, delay);
   }
 
-  startButton.addEventListener('click', () => {
+  $('we-start').addEventListener('click', () => {
     if (running) return;
-    opened = 0;
+
     running = true;
-    startButton.disabled = true;
-    stopButton.disabled = false;
-    status.textContent = 'Starting…';
-    step();
+    clicks = 0;
+    $('we-action').disabled = true;
+    $('we-status').textContent = 'Starting...';
+    run();
   });
-  stopButton.addEventListener('click', () => stop());
+
+  $('we-stop').addEventListener('click', () => stop());
+
+  $('we-minimize').addEventListener('click', () => {
+    minimized = !minimized;
+
+    $('we-controls').style.display = minimized ? 'none' : '';
+    $('we-minimize').textContent = minimized ? '+' : '−';
+    $('we-header').style.marginBottom = minimized ? '0' : '10px';
+    panel.style.width = minimized ? 'auto' : '190px';
+    panel.style.padding = minimized ? '8px 10px' : '12px';
+  });
+
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && running) stop('Stopped with Escape');
+    if (event.key === 'Escape' && running) stop();
   });
 })();

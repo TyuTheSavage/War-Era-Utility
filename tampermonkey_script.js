@@ -1,4 +1,3 @@
-
 // ==UserScript==
 // @name         WarEra Auto Clicker
 // @namespace    https://app.warera.io/
@@ -73,31 +72,45 @@
 
   const $ = id => panel.querySelector(`#${id}`);
 
-  function findButton(action) {
+
+
+function findButton(action) {
     const pattern = action === 'OPEN'
-    ? /^OPEN\d*$/
-    : new RegExp(`^${action}\\d*$`);
+        ? /^OPEN\d*$/
+        : new RegExp(`^${action}\\d*$`);
 
-    return [...document.querySelectorAll('button, [role="button"], div')]
-    .find(el => {
-      if (!el.getClientRects().length) return false;
-      if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
-
-      const label = (el.getAttribute('aria-label') || el.textContent || '')
-      .replace(/\s+/g, '')
-      .toUpperCase();
-
-      if (!pattern.test(label)) return false;
-
-      return ![...el.querySelectorAll('button, [role="button"], div')].some(child => {
-        const childLabel = (child.getAttribute('aria-label') || child.textContent || '')
+    const normalize = el => (el.innerText || el.textContent || '')
         .replace(/\s+/g, '')
         .toUpperCase();
 
-        return pattern.test(childLabel);
-      });
-    });
-  }
+    const visible = el =>
+        el.getClientRects().length > 0 &&
+        !el.disabled &&
+        el.getAttribute('aria-disabled') !== 'true';
+
+    const buttons = [...document.querySelectorAll('button, [role="button"]')];
+
+    const button = buttons.find(el =>
+        visible(el) && pattern.test(normalize(el))
+    );
+
+    if (button) return button;
+
+    return [...document.querySelectorAll('div')].find(el =>
+        visible(el) &&
+        !el.querySelector('button, [role="button"]') &&
+        pattern.test(
+            [...el.childNodes]
+                .filter(n => n.nodeType === Node.TEXT_NODE)
+                .map(n => n.textContent)
+                .join('')
+                .replace(/\s+/g, '')
+                .toUpperCase()
+        )
+    );
+}
+
+
 
   function stop(message = 'Stopped') {
     running = false;
